@@ -1,0 +1,134 @@
+# Datalake NYC Taxi x Météo — Bronze/Silver/Gold sur HDFS, calcul Spark en
+# vrai cluster (spark://spark-master:7077), jamais en local[*].
+# Repris et adapté du docker-compose du TD_Spark : namenode/datanode
+# (stockage HDFS) + spark-master/spark-worker (cluster de calcul Spark
+# standalone) + notebook. Kafka/Zookeeper retirés (inutiles ici).
+# IMPORTANT (allègement mémoire/disque) : resourcemanager/nodemanager/
+# historyserver (YARN) ont été retirés — on utilise le cluster Spark en
+# mode STANDALONE (spark://spark-master:7077), pas YARN, donc ces 3
+# conteneurs (images lourdes, ~1 Go chacune) ne servaient à rien ici. Ne
+# tournent maintenant que les 5 services réellement utilisés.
+
+services:
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    restart: always
+    ports:
+      - "9870:9870"
+      - "9000:9000"
+    volumes:
+      - hadoop_namenode:/hadoop/dfs/name
+    environment:
+      - CLUSTER_NAME=nyc_taxi_datalake
+    env_file:
+      - ./hadoop.env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9870"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    restart: always
+    volumes:
+      - hadoop_datanode:/hadoop/dfs/data
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+    env_file:
+      - ./hadoop.env
+    depends_on:
+      - namenode
+
+  spark-master:
+    image: apache/spark:3.5.0
+    container_name: spark-master
+    hostname: spark-master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    command: >
+      bash -c "
+        /opt/spark/sbin/start-master.sh &&
+        tail -f /opt/spark/logs/*"
+    environment:
+      - SPARK_MODE=master
+      - SPARK_LOCAL_IP=spark-master
+    volumes:
+      - ./work:/home/jovyan/work
+
+  spark-worker:
+    image: apache/spark:3.5.0
+    container_name: spark-worker
+    hostname: spark-worker
+    depends_on:
+      - spark-master
+    command: >
+      bash -c "
+        /opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        tail -f /opt/spark/logs/*"
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=4G
+    volumes:
+      # même volume que le driver (notebook) : en cluster mode c'est CE
+      # conteneur qui exécute les tâches, il doit voir les mêmes chemins
+      # locaux si jamais on y accède (leçon apprise sur le TD_Spark).
+      - ./work:/home/jovyan/work
+
+  # Conteneur dédié à l'ingestion Bronze : téléchargement TLC + météo et
+  # écriture directe dans HDFS (webhdfs). Ne dépend pas de Spark.
+  ingest:
+    build:
+      context: ./ingestion
+    container_name: ingest
+    depends_on:
+      namenode:
+        condition: service_healthy
+      datanode:
+        condition: service_started
+    environment:
+      - HDFS_NAMENODE_HOST=namenode
+      - HDFS_NAMENODE_WEBHDFS_PORT=9870
+      - HDFS_NAMENODE_RPC_PORT=9000
+      - LOCAL_SOURCE_DIR=/local_source
+    volumes:
+      - ./work:/home/jovyan/work
+      - ingest_cache:/tmp/nyc_taxi_cache
+      # Dossier nyc_taxi_data déjà fourni (voir .env : NYC_TAXI_DATA_DIR) :
+      # taxi_ingest.py l'utilise en priorité, avant tout accès réseau.
+      - ${NYC_TAXI_DATA_DIR:-./nyc_taxi_data}:/local_source:ro
+    # Par défaut ne lance rien : on l'exécute à la demande avec
+    # `docker compose run ingest python taxi_ingest.py ...` pour garder le
+    # contrôle sur quel(s) mois/type télécharger pendant le développement.
+    command: ["sleep", "infinity"]
+
+  pyspark-notebook:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.notebook
+    container_name: pyspark_notebook
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./work:/home/jovyan/work
+      # même dossier local que le service "ingest" : les cellules du
+      # notebook lancent `!python taxi_ingest.py` directement dans CE
+      # conteneur, il doit donc voir /local_source lui aussi.
+      - ${NYC_TAXI_DATA_DIR:-./nyc_taxi_data}:/local_source:ro
+    environment:
+      PYSPARK_SUBMIT_ARGS: >
+        --packages org.apache.hadoop:hadoop-aws:3.3.4
+        pyspark-shell
+      LOCAL_SOURCE_DIR: /local_source
+    depends_on:
+      - spark-worker
+      - namenode
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
+  ingest_cache:

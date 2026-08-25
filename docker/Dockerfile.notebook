@@ -1,0 +1,22 @@
+FROM jupyter/pyspark-notebook
+
+USER root
+
+# Libs nécessaires : client HDFS python (hdfs), client parquet (pyarrow),
+# visualisations pour la couche Gold (chord diagram, ridgeline, heatmap),
+# et le client Open-Meteo (requests, simple appel HTTP).
+RUN pip install --no-cache-dir \
+    hdfs==2.7.3 \
+    pyarrow==14.0.2 \
+    requests==2.31.0 \
+    plotly==5.19.0 \
+    holoviews==1.18.3 \
+    bokeh==3.3.4 \
+    seaborn==0.13.2 \
+    matplotlib==3.8.3 \
+    joypy==0.2.6 \
+    geopandas==0.14.3 \
+    shapely==2.0.3 \
+    pandas==2.2.1
+
+USER jovyan

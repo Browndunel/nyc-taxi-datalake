@@ -1,0 +1,8 @@
+nyc_taxi_data/
+work/.gold_cache/
+work/pipeline/**/__pycache__/
+.env
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.log

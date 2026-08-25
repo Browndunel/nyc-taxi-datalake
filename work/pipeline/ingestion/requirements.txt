@@ -1,0 +1,5 @@
+hdfs==2.7.3
+requests==2.31.0
+pyarrow==14.0.2
+pandas==2.2.1
+tqdm==4.66.2
