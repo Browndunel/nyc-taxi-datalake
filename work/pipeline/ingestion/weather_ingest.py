@@ -77,7 +77,7 @@ def fetch_month(year, month):
     hourly = payload["hourly"]
     df = pd.DataFrame(hourly)
     df.rename(columns={"time": "datetime_local"}, inplace=True)
-    df["datetime_local"] = pd.to_datetime(df["datetime_local"])
+    df["datetime_local"] = pd.to_datetime(df["datetime_local"]).astype("datetime64[us]")
     return df, resp.url
 
 
@@ -92,7 +92,7 @@ def ingest_month(client, year, month, force=False):
     df, url = fetch_month(year, month)
 
     local_path = f"{CACHE_DIR}/weather_{year:04d}-{month:02d}.parquet"
-    df.to_parquet(local_path, index=False)
+    df.to_parquet(local_path, index=False, coerce_timestamps="us", allow_truncated_timestamps=True)
 
     ensure_dir(client, partition_dir)
     hdfs_path = f"{partition_dir}/weather_{year:04d}-{month:02d}.parquet"

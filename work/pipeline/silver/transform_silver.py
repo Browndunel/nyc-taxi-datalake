@@ -128,8 +128,8 @@ def list_bronze_partitions(spark, vehicle_type):
     d'un client HDFS séparé côté driver)."""
     sc = spark.sparkContext
     hadoop_conf = sc._jsc.hadoopConfiguration()
-    fs = sc._jvm.org.apache.hadoop.fs.FileSystem.get(hadoop_conf)
     base = sc._jvm.org.apache.hadoop.fs.Path(f"{BRONZE_TAXI}/vehicle_type={vehicle_type}")
+    fs = base.getFileSystem(hadoop_conf)
 
     partitions = []
     if not fs.exists(base):

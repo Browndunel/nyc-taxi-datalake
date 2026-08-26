@@ -48,7 +48,27 @@ def main():
     local_zip = f"{CACHE_DIR}/taxi_zones.zip"
     client.download(f"{partition_dir}/taxi_zones.zip", local_zip, overwrite=True)
 
-    zones = gpd.read_file(f"zip://{local_zip}")
+    # engine="pyogrio" explicite : le moteur par défaut (fiona) plante avec
+    # geopandas 0.14.3 + fiona >= 1.10 ("module 'fiona' has no attribute
+    # 'path'") — fiona 1.10 a retiré un module interne que cette version de
+    # geopandas attend encore. pyogrio (backend GDAL alternatif) n'a pas ce
+    # problème.
+    #
+    # En revanche, contrairement à fiona, pyogrio (GDAL/OGR) ne détecte pas
+    # automatiquement un shapefile logé dans un sous-dossier à l'intérieur
+    # du zip — et c'est justement le cas de taxi_zones.zip (TLC), dont le
+    # contenu est sous "taxi_zones/taxi_zones.shp" et non à la racine du
+    # zip. Sans chemin explicite, GDAL renvoie "not recognized as a
+    # supported file format" en croyant que le zip lui-même n'est pas un
+    # format supporté. On liste donc le zip pour trouver le .shp où qu'il
+    # soit (racine ou sous-dossier), et on le référence explicitement via
+    # la syntaxe "zip://<zip>!<chemin_interne>".
+    with zipfile.ZipFile(local_zip) as zf:
+        shp_candidates = [n for n in zf.namelist() if n.lower().endswith(".shp")]
+    if not shp_candidates:
+        raise RuntimeError(f"Aucun fichier .shp trouvé dans {local_zip}")
+    shp_inner_path = shp_candidates[0]
+    zones = gpd.read_file(f"zip://{local_zip}!{shp_inner_path}", engine="pyogrio")
     zones = zones.to_crs(epsg=4326)  # coordonnées GPS standard (lat/lon)
 
     lons = np.arange(LON_MIN, LON_MAX, GRID_RESOLUTION)

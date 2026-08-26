@@ -72,11 +72,47 @@ services:
     environment:
       - SPARK_MODE=worker
       - SPARK_WORKER_CORES=2
-      - SPARK_WORKER_MEMORY=4G
+      - SPARK_WORKER_MEMORY=2G
     volumes:
       # même volume que le driver (notebook) : en cluster mode c'est CE
       # conteneur qui exécute les tâches, il doit voir les mêmes chemins
       # locaux si jamais on y accède (leçon apprise sur le TD_Spark).
+      - ./work:/home/jovyan/work
+
+  spark-worker-2:
+    image: apache/spark:3.5.0
+    container_name: spark-worker-2
+    hostname: spark-worker-2
+    depends_on:
+      - spark-master
+    command: >
+      bash -c "
+        /opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        tail -f /opt/spark/logs/*"
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_LOCAL_IP=spark-worker-2
+    volumes:
+      - ./work:/home/jovyan/work
+
+  spark-worker-3:
+    image: apache/spark:3.5.0
+    container_name: spark-worker-3
+    hostname: spark-worker-3
+    depends_on:
+      - spark-master
+    command: >
+      bash -c "
+        /opt/spark/sbin/start-worker.sh spark://spark-master:7077 &&
+        tail -f /opt/spark/logs/*"
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_WORKER_CORES=2
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_LOCAL_IP=spark-worker-3
+    volumes:
       - ./work:/home/jovyan/work
 
   # Conteneur dédié à l'ingestion Bronze : téléchargement TLC + météo et
